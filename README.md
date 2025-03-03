@@ -21,7 +21,7 @@ A web application that visualizes ward placement patterns in Dota 2 matches. Thi
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/dota-ward-tracker.git
+git clone https://github.com/Nicolas-Zink/dota-ward-tracker.git
 cd dota-ward-tracker
 ```
 
