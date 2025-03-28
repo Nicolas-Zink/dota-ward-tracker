@@ -1,0 +1,54 @@
+/* ProPlayerComparison.css */
+.ward-map-container {
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .ward-map-container:hover .ward-map-overlay {
+    opacity: 1;
+  }
+  
+  .ward-map-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 10;
+  }
+  
+  .ward-map-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(0, 0, 0, 0.9);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    z-index: 100;
+    width: 500px;
+    height: 500px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  }
+  
+  /* Make sure the tooltips don't get cut off */
+  .group {
+    position: relative;
+  }
+  
+  .group:hover .group-hover\:opacity-100 {
+    z-index: 50;
+  }
+  
+  /* Truncate text that's too long */
+  .truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }

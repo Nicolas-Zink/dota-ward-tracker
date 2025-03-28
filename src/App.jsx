@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { GoogleLogin } from '@react-oauth/google';
+import React, { useState, useEffect, useRef } from 'react';
+import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from 'firebase/auth';
 import WardHeatmap from './WardHeatmap';
+import ProPlayerComparison from './ProPlayerComparison';
+import SaveAndShare from './SaveAndShare';
+import LandingPage from './LandingPage';
 
-// Ad component for reusability
 const AdBanner = ({ className }) => {
   const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
+  // Show placeholder in development
   if (isDevelopment) {
     return (
       <div className={`${className} bg-gray-200 border-2 border-dashed border-gray-400 flex items-center justify-center`}>
@@ -15,8 +18,13 @@ const AdBanner = ({ className }) => {
   }
 
   useEffect(() => {
-    if (window.adsbygoogle) {
-      window.adsbygoogle.push({});
+    // Initialize ads after component mounts
+    try {
+      if (window.adsbygoogle) {
+        window.adsbygoogle.push({});
+      }
+    } catch (error) {
+      console.error('AdSense error:', error);
     }
   }, []);
 
@@ -24,11 +32,11 @@ const AdBanner = ({ className }) => {
     <div className={className}>
       <ins
         className="adsbygoogle"
-        style={{ display: 'block' }}
-        data-ad-client="your-ad-client-id"
-        data-ad-slot="your-ad-slot"
-        data-ad-format="vertical"
-        data-full-width-responsive="false"
+        style={{ display: 'block', width: '100%', height: '100%' }}
+        data-ad-client="ca-pub-XXXXXXXXXXXXXXXX" // Replace with your AdSense Publisher ID
+        data-ad-slot="XXXXXXXXXX" // Replace with your ad slot ID
+        data-ad-format="auto"
+        data-full-width-responsive="true"
       />
     </div>
   );
@@ -45,36 +53,104 @@ const App = () => {
   const [error, setError] = useState(null);
   const [wardData, setWardData] = useState(null);
   const [user, setUser] = useState(null);
+  const wardMapRef = useRef(null);
 
   useEffect(() => {
-    // Check for existing token in localStorage on component mount
-    const token = localStorage.getItem('google_token');
-    if (token) {
-      setUser(JSON.parse(token));
+    // Check for authentication state changes
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userData = {
+          email: user.email,
+          name: user.displayName,
+          picture: user.photoURL,
+          uid: user.uid
+        };
+        setUser(userData);
+        localStorage.setItem('google_token', JSON.stringify(userData));
+      } else {
+        // Check for existing token in localStorage as fallback
+        const token = localStorage.getItem('google_token');
+        if (token) {
+          setUser(JSON.parse(token));
+        }
+      }
+    });
+
+    // Check for shared URL parameters
+    const params = new URLSearchParams(window.location.search);
+    const sharedParam = params.get('shared');
+    
+    if (sharedParam === 'true') {
+      const accountId = params.get('accountId');
+      const numGames = params.get('games');
+      const isRadiant = params.get('team');
+      
+      if (accountId) {
+        setFormData({
+          accountId,
+          numGames: numGames || '100',
+          isRadiant: isRadiant || 'all'
+        });
+        
+        // We'll fetch ward data after authentication is checked
+      }
     }
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
   }, []);
 
-  const handleSuccess = (credentialResponse) => {
-    const token = credentialResponse.credential;
-    const decodedToken = JSON.parse(atob(token.split('.')[1]));
-    const userData = {
-      email: decodedToken.email,
-      name: decodedToken.name,
-      picture: decodedToken.picture,
-      token: token
-    };
-    setUser(userData);
-    localStorage.setItem('google_token', JSON.stringify(userData));
+  // Effect to handle auto-fetching for shared links
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sharedParam = params.get('shared');
+    
+    if (sharedParam === 'true' && user && formData.accountId) {
+      fetchWardData();
+    }
+  }, [user, formData.accountId]);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setError(null);
+      const auth = getAuth();
+      const provider = new GoogleAuthProvider();
+      
+      const result = await signInWithPopup(auth, provider);
+      // This gives you a Google Access Token
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const token = credential.accessToken;
+      // The signed-in user info
+      const user = result.user;
+      
+      const userData = {
+        email: user.email,
+        name: user.displayName,
+        picture: user.photoURL,
+        token: token,
+        uid: user.uid
+      };
+      
+      setUser(userData);
+      localStorage.setItem('google_token', JSON.stringify(userData));
+    } catch (error) {
+      setError(`Login Failed: ${error.message}`);
+      console.error('Error signing in with Google:', error);
+    }
   };
 
-  const handleError = () => {
-    setError('Login Failed');
-  };
-
-  const handleSignOut = () => {
-    setUser(null);
-    localStorage.removeItem('google_token');
-    setWardData(null);
+  const handleSignOut = async () => {
+    try {
+      const auth = getAuth();
+      await auth.signOut();
+      setUser(null);
+      localStorage.removeItem('google_token');
+      setWardData(null);
+    } catch (error) {
+      console.error('Error signing out:', error);
+      setError(`Sign out failed: ${error.message}`);
+    }
   };
 
   const handleInputChange = (e) => {
@@ -116,31 +192,23 @@ const App = () => {
     await fetchWardData();
   };
 
-  const content = !user ? (
-    <div className="max-w-md mx-auto">
-      <h1 className="text-4xl font-bold text-gray-900 mb-8 text-center">
-        Dota 2 Ward Tracker
-      </h1>
-      
-      <div className="bg-white p-6 rounded-lg shadow-sm">
-        <div className="flex flex-col items-center space-y-4">
-          <p className="text-gray-600 mb-4">Sign in to access the ward tracker</p>
-          
-          <GoogleLogin
-            onSuccess={handleSuccess}
-            onError={handleError}
-            useOneTap
-          />
-
-          {error && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">
-              {error}
-            </div>
-          )}
-        </div>
+  // Render landing page if user is not signed in
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <LandingPage onSignIn={handleGoogleSignIn} />
+        
+        {error && (
+          <div className="max-w-md mx-auto mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">
+            {error}
+          </div>
+        )}
       </div>
-    </div>
-  ) : (
+    );
+  }
+
+  // Content for logged in users
+  const loggedInContent = (
     <div className="max-w-xl mx-auto">
       <div className="flex justify-between items-center mb-8">
         <h1 className="text-4xl font-bold text-gray-900">
@@ -239,38 +307,63 @@ const App = () => {
         )}
       </form>
 
-      {wardData && <WardHeatmap wardData={wardData} />}
+      {wardData && (
+        <div className="mt-8">
+          <div ref={wardMapRef}>
+            <WardHeatmap wardData={wardData} />
+          </div>
+          
+          <SaveAndShare 
+            wardMapRef={wardMapRef} 
+            playerInfo={{
+              accountId: formData.accountId,
+              numGames: formData.numGames,
+              isRadiant: formData.isRadiant
+            }}
+          />
+          
+          <ProPlayerComparison 
+            userWardData={wardData} 
+            userAccountId={formData.accountId}
+          />
+        </div>
+      )}
     </div>
   );
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Three-column layout */}
       <div className="flex justify-center px-4 py-12">
-        {/* Left ad - hidden on mobile */}
-        <div className="hidden lg:block w-64 mr-8">
-          <div className="sticky top-8">
-            <AdBanner className="w-64 h-full" />
+        {/* Left ad - only shown when user has content */}
+        {user && wardData && (
+          <div className="hidden lg:block w-64 mr-8">
+            <div className="sticky top-8">
+              <AdBanner className="w-64 h-full" />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Main content */}
         <div className="flex-1 max-w-xl">
-          {content}
+          {loggedInContent}
         </div>
 
-        {/* Right ad - hidden on mobile */}
-        <div className="hidden lg:block w-64 ml-8">
-          <div className="sticky top-8">
-            <AdBanner className="w-64 h-full" />
+        {/* Right ad - only shown when user has content */}
+        {user && wardData && (
+          <div className="hidden lg:block w-64 ml-8">
+            <div className="sticky top-8">
+              <AdBanner className="w-64 h-full" />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Mobile ad - only shown on mobile */}
-      <div className="lg:hidden px-4 py-6">
-        <AdBanner className="w-full h-32" />
-      </div>
+      {/* Mobile ad - only shown on mobile when user has content */}
+      {user && wardData && (
+        <div className="lg:hidden px-4 py-6">
+          <AdBanner className="w-full h-32" />
+        </div>
+      )}
     </div>
   );
 };
